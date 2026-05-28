@@ -30,7 +30,7 @@ async function mainMenuFlow(flowStage, message, userPhone, twilioNumber) {
     const sentMessage = await sendTemplateMessage(
       twilioNumber,
       userPhone,
-      'HX756b0bd4d9540d4fae0d56343a960033');
+      'HXf3c63a81e8cbf98c1015b0b023d8fbdf');
 
     await supabase
     .from("vf_sessions")
