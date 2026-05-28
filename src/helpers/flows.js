@@ -88,7 +88,8 @@ async function businessLookupFlow(flowStage, message, userPhone, twilioNumber) {
     await supabase
       .from("vf_sessions")
       .update({ current_flow_stage: 1, current_paybill: message, updated_at: new Date().toISOString() })
-      .eq("phone", userPhone);
+      .eq("phone", userPhone)
+      .eq("is_active", true);
   } else if(flowStage === 1){
     switch(message){
       case 'More':
@@ -96,6 +97,7 @@ async function businessLookupFlow(flowStage, message, userPhone, twilioNumber) {
           .from("vf_sessions")
           .select("current_paybill")
           .eq("phone", userPhone)
+          .eq("is_active", true)
           .maybeSingle();
 
         if (!sess || !sess.current_paybill) {
