@@ -185,6 +185,30 @@ router.put("/businesses/:id", async (req, res) => {
   }
 });
 
+router.delete("/businesses/:id", async (req, res) => {
+  const numericId = Number(req.params.id);
+
+  if (!numericId || isNaN(numericId)) {
+    return res.status(400).json({ error: "Invalid business id" });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("vf_registered_businesses")
+      .delete()
+      .eq("id", numericId)
+      .select()
+      .single();
+
+    if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: "Business not found" });
+    res.status(204).send();
+  } catch (err) {
+    console.error("[admin] delete business error", err);
+    res.status(500).json({ error: "Failed to delete business" });
+  }
+});
+
 router.post("/businesses/import", upload.single("file"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded" });
