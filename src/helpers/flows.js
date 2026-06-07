@@ -22,6 +22,48 @@ async function endSession(userPhone) {
     .eq("phone", userPhone);
 }
 
+async function lookupBusinessByIdentifier(identifier) {
+  const { data: paybillRecord, error: paybillError } = await supabase
+    .from("vf_paybills")
+    .select("paybill, vf_registered_businesses(*, vf_business_categories(name))")
+    .eq("paybill", identifier)
+    .maybeSingle();
+
+  if (paybillError) {
+    console.error("Error looking up paybill:", paybillError);
+    return null;
+  }
+
+  if (paybillRecord?.vf_registered_businesses) {
+    return {
+      business: paybillRecord.vf_registered_businesses,
+      identifier: paybillRecord.paybill,
+      type: "paybill",
+    };
+  }
+
+  const { data: tillRecord, error: tillError } = await supabase
+    .from("vf_tillnumbers")
+    .select("till_number, vf_registered_businesses(*, vf_business_categories(name))")
+    .eq("till_number", identifier)
+    .maybeSingle();
+
+  if (tillError) {
+    console.error("Error looking up till number:", tillError);
+    return null;
+  }
+
+  if (tillRecord?.vf_registered_businesses) {
+    return {
+      business: tillRecord.vf_registered_businesses,
+      identifier: tillRecord.till_number,
+      type: "till",
+    };
+  }
+
+  return null;
+}
+
 async function mainMenuFlow(flowStage, message, userPhone, twilioNumber) {
   console.log("flow: main menu flow");
   console.log("flowStage:", flowStage);
@@ -61,24 +103,15 @@ async function businessLookupFlow(flowStage, message, userPhone, twilioNumber) {
   console.log("flowStage:", flowStage);
   console.log("message:", message);
   if(flowStage === 0){
-    const { data: business, error } = await supabase
-      .from("vf_registered_businesses")
-      .select("*")
-      .eq("paybill", message)
-      .maybeSingle();
+    const result = await lookupBusinessByIdentifier(message);
 
-    if (error) {
-      console.error("Error looking up business:", error);
-      return;
-    }
-
-    if (business) {
+    if (result) {
       await sendBusinessInfoTemplate(
         twilioNumber,
         userPhone,
-        business.official_business_name,
-        business.paybill,
-        business.notes,
+        result.business.official_business_name,
+        result.identifier,
+        result.business.notes,
         "0"
       );
     } else {
@@ -105,15 +138,13 @@ async function businessLookupFlow(flowStage, message, userPhone, twilioNumber) {
           break;
         }
 
-        const { data: biz } = await supabase
-          .from("vf_registered_businesses")
-          .select("*")
-          .eq("paybill", sess.current_paybill)
-          .maybeSingle();
+        const result = await lookupBusinessByIdentifier(sess.current_paybill);
 
-        if (biz) {
-          let details = `Report Summary\n- ${biz.official_business_name}\n${biz.paybill}`;
-          if (biz.business_category) details += `\n${biz.business_category}`;
+        if (result) {
+          const biz = result.business;
+          let details = `Report Summary\n- ${biz.official_business_name}\n${result.identifier}`;
+          const categoryName = biz.vf_business_categories?.name;
+          if (categoryName) details += `\n${categoryName}`;
           if (biz.goods_services) details += `\n${biz.goods_services}`;
           if (biz.notes) details += `\n${biz.notes}`;
           await sendTextMessage(twilioNumber, userPhone, details);
@@ -122,6 +153,29 @@ async function businessLookupFlow(flowStage, message, userPhone, twilioNumber) {
         }
         break;
       case 'Review':
+        const { data: reviewSess } = await supabase
+          .from("vf_sessions")
+          .select("current_paybill")
+          .eq("phone", userPhone)
+          .eq("is_active", true)
+          .maybeSingle();
+
+        if (!reviewSess?.current_paybill) {
+          await sendTextMessage(twilioNumber, userPhone, "Session expired. Please text hi to start again.");
+          break;
+        }
+
+        const { data: paybillForReview } = await supabase
+          .from("vf_paybills")
+          .select("paybill")
+          .eq("paybill", reviewSess.current_paybill)
+          .maybeSingle();
+
+        if (!paybillForReview) {
+          await sendTextMessage(twilioNumber, userPhone, "Reviews are only available for paybill lookups. Please try again with a paybill.");
+          break;
+        }
+
         await sendTextMessage(twilioNumber, userPhone, "Tell us your experience with this business.");
         await supabase
           .from("vf_sessions")
